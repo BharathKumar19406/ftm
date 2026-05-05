@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vulnerable-web-app
+  labels:
+    app: demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo
+  template:
+    metadata:
+      labels:
+        app: demo
+    spec:
+      # CRITICAL: This allows the Watcher sidecar to see the Target's Process Tree
+      shareProcessNamespace: true 
+      containers:
+      
+      # -----------------------------------------------
+      # Container A: The Target (Vulnerable Nginx)
+      # -----------------------------------------------
+      - name: target-app
+        image: nginx:latest
+        ports:
+        - containerPort: 80
+
+      # -----------------------------------------------
+      # Container B: The Watcher (Forensic Sidecar)
+      # -----------------------------------------------
+      - name: ftm-watcher
+        image: custom-ftm-agent:latest
+        imagePullPolicy: Never
+        securityContext:
+          privileged: true # Required for eBPF hooks into the host Kernel
+        lifecycle:
+          preStop:
+            exec:
+              # When K8s deletes the pod, this hook fires.
+              # It sends SIGTERM to our Go agent, forcing it to dump the buffer, 
+              # and gives it 5 seconds to upload the evidence before the pod goes "Poof".
+              command: ["/bin/sh", "-c", "kill -SIGTERM 1 && sleep 5"]
